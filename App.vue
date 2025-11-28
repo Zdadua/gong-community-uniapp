@@ -13,5 +13,12 @@
 </script>
 
 <style>
-	/*每个页面公共css */
+	page {
+		height: 100%;
+	}
+	
+	page, body, view, text, input, textarea, button {
+	  font-family: "PingFang SC", "Helvetica Neue", Helvetica, "microsoft yahei", Arial, sans-serif;
+	  box-sizing: border-box;
+	}
 </style>

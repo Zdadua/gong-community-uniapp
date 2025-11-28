@@ -1,5 +1,5 @@
 <template>
-	<view class="custom-topbar-wrapper">
+	<view class="custom-topbar-wrapper" :style="{paddingTop: `${paddingTop}px`}">
 	    <view class="custom-topbar-container">
 			<text>全部</text>
 			<text>热门</text>
@@ -12,20 +12,37 @@
 </template>
 
 <script lang="ts" setup>
+import { onBeforeMount, ref } from 'vue';
+
+	const paddingTop = ref(0);
+	
+	onBeforeMount(() => {
+		let menuButtonInfo = null;
+		const systemInfo = uni.getSystemInfoSync();
+		
+		paddingTop.value = systemInfo.statusBarHeight;
+		try {
+			menuButtonInfo = uni.getMenuButtonBoundingClientRect();
+			
+			paddingTop.value = paddingTop.value + menuButtonInfo.height;
+		} catch(e) {
+			console.log("no menuButtonInfo...");
+		}
+	})
 	
 </script>
 
 <style lang="scss">
 	
 	.custom-topbar-wrapper {
+		box-sizing: content-box;
 		width: 100%;
 		height: 44px; /* iOS 导航栏高度 */
 		padding-top: var(--status-bar-height); /* 状态栏适配 */
 		display: flex;
 		align-items: center;
-		background-color: #007aff;
-		color: #fff;
-		font-size: 16px;
+		color: #000;
+		font-size: 32rpx;
 		
 		.custom-topbar-container {
 			width: 100%;

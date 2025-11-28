@@ -1,8 +1,8 @@
 
 enum FileType {
-	'image/jpeg',
-	'image/png',
-	'image/gif'
+	JPEG = 'image/jpeg',
+	PNG = 'image/png',
+	GIF = 'image/gif'
 }
 
 export default FileType;

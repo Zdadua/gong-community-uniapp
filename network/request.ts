@@ -1,11 +1,23 @@
 import { BASE_URL } from "../config";
 import { BaseResponse } from "./entity/BaseResponse";
+import { ErrorData, UniFailError, Success, HttpError } from "../utils/networkUtils";
 
-const request = {
+type RequestInterceptor = (config: any) => any;
+type ResponseInterceptor = (res: any) => any;
+
+interface Interceptors {
+	requestInterceptors: Array<RequestInterceptor>,
+	responseInterceptors: Array<ResponseInterceptor>,
+	useRequestInterceptor: (fn: RequestInterceptor) => void,
+	useResponseInterceptor: (fn: ResponseInterceptor) => void,
+	fetch: <T>(options: any) => Promise<Success<T>>
+}
+
+const request: Interceptors = {
   requestInterceptors: [],
   responseInterceptors: [],
   
-  useRequestInterceptor(fn: (config: any) => any) {
+  useRequestInterceptor(fn: RequestInterceptor) {
     this.requestInterceptors.push(fn)
   },
   
@@ -13,10 +25,7 @@ const request = {
     this.responseInterceptors.push(fn)
   },
   
-  fetch<T>(options: any): Promise<{
-	  statusCode: number;
-	  data: T;
-  }> {
+  fetch<T>(options: any): Promise<Success<T>> {
     let config: UniNamespace.RequestOptions = {
 		method: 'GET',
 		dataType: 'json',
@@ -30,27 +39,30 @@ const request = {
     return new Promise((resolve, reject) => {
       uni.request({
         ...config,
-        success: (res: UniNamespace.RequestSuccessCallbackResult) => {
+        success: (res) => {
 			let tmp = res;
 			for (const interceptor of this.responseInterceptors) {
 				tmp = interceptor(tmp)
 			}
 			
-			let { data, statusCode } = tmp;
+			let { data, statusCode, header } = tmp;
 			
 			if(statusCode >= 200 && statusCode < 300) {
 				resolve({
 					statusCode: statusCode,
-					data: (data as BaseResponse<T>).data
+					result: data as BaseResponse<T>,
+					header: header
 				})
 			} else {
 				reject({
 					statusCode: statusCode,
-					data: data
+					errMsg: (data as ErrorData).message
 				})
 			}
         },
-        fail: reject
+        fail: (err: UniFailError) => {
+			reject(err)
+		}
       })
     })
   }
@@ -71,9 +83,24 @@ request.useRequestInterceptor((config) => {
 
 request.useResponseInterceptor((res) => {
   if (res.statusCode === 401) {
-    uni.redirectTo({ url: '/pages/login/login' })
+    // uni.redirectTo({ url: '/pages/login/login' })
   }
   return res
 })
 
 export default request
+
+export async function fetchNoError<T>(options: any): Promise<Success<T> | undefined> {
+	try {
+		const res = await request.fetch<T>(options)
+		
+		return res
+	} catch(err) {
+		if (typeof err === 'object' && err !== null && 'statusCode' in err) {
+			const e = (err as unknown) as HttpError;
+			console.error(`statusCode: ${e.statusCode} errMsg: ${e.errMsg}`);
+		} else {
+			console.error('未知错误', err);
+		}
+	}
+}
