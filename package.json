@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "test": "vitest"
+    "test": "vitest"
   },
   "repository": {
     "type": "git",
