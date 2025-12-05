@@ -11,6 +11,14 @@
 			"style": {
 				"navigationBarTitleText": "登录"
 			}
+		},
+		{
+			"path": "pages/report/report",
+			"style": {
+				"navigationBarTitleText": "举报",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#FFA1AC"
+			}
 		}
 	],
 	"globalStyle": {
