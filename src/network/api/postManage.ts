@@ -1,6 +1,6 @@
-import { MySort } from "../entity/MySort";
-import { PageableContent } from "../entity/pageable";
-import { PostDetail, PostRequest } from "../entity/post";
+import type { MySort } from "../entity/MySort";
+import type { PageableContent } from "../entity/pageable";
+import type { PostDetail, PostRequest } from "../entity/post";
 import { fetchNoError } from "../request";
 
 export async function getPostDraft(): Promise<PostDetail | undefined> {
@@ -46,10 +46,8 @@ export async function getPosts(
 		method: "GET",
 		url: "/posts",
 		data: {
-			category: category,
 			page: page,
-			size: size,
-			sort: sort ? `${sort.field},${sort.order}` : undefined
+			size: size
 		}
 	})
 	
@@ -61,7 +59,7 @@ export async function postDirectly(
 ): Promise<PostDetail | undefined> {
 	const res = await fetchNoError<PostDetail>({
 		method: "POST",
-		url: "posts",
+		url: "/posts",
 		data: request
 	})
 	

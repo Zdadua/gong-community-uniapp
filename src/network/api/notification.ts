@@ -1,6 +1,6 @@
-import { MySort } from "../entity/MySort"
-import { PageableContent } from "../entity/pageable";
-import { Notification } from "../entity/notification";
+import type { MySort } from "../entity/MySort"
+import type { PageableContent } from "../entity/pageable";
+import type { Notification } from "../entity/notification";
 import { fetchNoError } from "../request";
 
 export async function getPageableNotifications(

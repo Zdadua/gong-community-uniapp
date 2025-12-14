@@ -1,7 +1,7 @@
 import { fetchNoError } from "../request";
-import { UserInfo } from "../entity/UserInfo";
-import { AvatarUrls } from "../entity/AvatarUrls";
-import FileType from "../../utils/FileType";
+import type { UserInfo } from "../entity/UserInfo";
+import type { AvatarUrls } from "../entity/AvatarUrls";
+import type FileType from "../../utils/FileType";
 
 /**
  * 获取当前用户信息

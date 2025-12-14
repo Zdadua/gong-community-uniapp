@@ -1,4 +1,4 @@
-import { BaseResponse } from "../network/entity/BaseResponse";
+import type { BaseResponse } from "../network/entity/BaseResponse";
 
 export interface Success<T> {
 	result?: BaseResponse<T>;

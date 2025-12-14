@@ -1,6 +1,5 @@
-
 import { fetchNoError } from "../request";
-import { MediaInfo, MediaUploadResponse } from "../entity/commentMedia";
+import type { MediaInfo, MediaUploadResponse } from "../entity/commentMedia";
 
 // 获取评论媒体列表
 export async function getCommentMediaList(commentId: number): Promise<MediaInfo[] | undefined> {

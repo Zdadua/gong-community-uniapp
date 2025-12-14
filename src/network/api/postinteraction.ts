@@ -1,6 +1,6 @@
-import { MySort } from "../entity/MySort";
-import { PageableContent } from "../entity/pageable";
-import { PostDetail } from "../entity/post";
+import type { MySort } from "../entity/MySort";
+import type { PageableContent } from "../entity/pageable";
+import type { PostDetail } from "../entity/post";
 import { fetchNoError } from "../request";
 
 export async function like(

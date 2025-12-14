@@ -1,11 +1,11 @@
-import { VerificationCode } from "../entity/VerificationCode";
-import { RegisterEmail } from "../entity/RegisterEmail";
+import type { VerificationCode } from "../entity/VerificationCode";
+import type { RegisterEmail } from "../entity/RegisterEmail";
 import { fetchNoError } from "../request";
-import { SimpleUserInfo } from "../entity/SimpleUserInfo";
-import { Verification } from "../entity/Verification";
-import { UniappRegisterOpenId } from "../entity/UniappRegisterOpenId";
-import { LoginResponse } from "../entity/LoginResponse";
-import { ResetPasswordResponse } from "../entity/ResetPasswordResponse";
+import type { SimpleUserInfo } from "../entity/SimpleUserInfo";
+import type { Verification } from "../entity/Verification";
+import type { UniappRegisterOpenId } from "../entity/UniappRegisterOpenId";
+import type { LoginResponse } from "../entity/LoginResponse";
+import type { ResetPasswordResponse } from "../entity/ResetPasswordResponse";
 
 /**
  * 获取邮箱注册验证码

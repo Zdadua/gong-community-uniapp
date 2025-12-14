@@ -1,6 +1,5 @@
-
-import { MySort } from "../entity/MySort";
-import { PageableContent } from "../entity/pageable";
+import type { MySort } from "../entity/MySort";
+import type { PageableContent } from "../entity/pageable";
 import { fetchNoError } from "../request";
 
 // 评论信息接口

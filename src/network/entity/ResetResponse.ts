@@ -1,4 +1,4 @@
-import { Verification } from "./Verification";
+import type { Verification } from "./Verification";
 
 export interface ResetResponse {
 	email: string;

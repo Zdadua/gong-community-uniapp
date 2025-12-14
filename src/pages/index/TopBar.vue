@@ -14,13 +14,13 @@
 <script lang="ts" setup>
 import { onBeforeMount, ref } from 'vue';
 
-	const paddingTop = ref(0);
+	const paddingTop = ref<number>(0);
 	
 	onBeforeMount(() => {
 		let menuButtonInfo = null;
 		const systemInfo = uni.getSystemInfoSync();
 		
-		paddingTop.value = systemInfo.statusBarHeight;
+		paddingTop.value = systemInfo.statusBarHeight!;
 		try {
 			menuButtonInfo = uni.getMenuButtonBoundingClientRect();
 			
@@ -43,6 +43,8 @@ import { onBeforeMount, ref } from 'vue';
 		align-items: center;
 		color: #000;
 		font-size: 32rpx;
+		
+		background: linear-gradient(to bottom, rgb(255, 118, 134) 0%, #FCFCFC 95%);
 		
 		.custom-topbar-container {
 			width: 100%;

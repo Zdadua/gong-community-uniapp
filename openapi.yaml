@@ -1,0 +1,5096 @@
+openapi: 3.0.3
+info:
+  title: BBS论坛用户管理API
+  description: |
+    BBS论坛系统的用户认证与管理接口文档
+    
+    ## 功能概述
+    本API提供用户注册、登录、个人信息管理等核心功能，支持多种认证方式。
+    
+    ## 认证机制
+    - JWT Token认证：登录成功后返回JWT Token，需在请求头中携带 `Authorization: Bearer <token>`
+    - 三种登录方式：
+      1. 用户名密码登录：传统的用户名+密码认证
+      2. 邮箱验证码登录：通过邮箱接收验证码进行认证
+      3. 微信小程序登录：使用微信小程序授权码登录
+    - 用户注册支持：邮箱验证码注册、微信小程序注册
+    
+    ## 错误处理
+    所有接口均返回统一格式的响应，包含状态码、消息和数据。错误时会返回对应的错误码和错误信息。
+  version: 0.1.0
+  contact:
+    name: BBS开发团队-后端组
+    email: leotanstudio@gmail.com
+
+servers:
+  - url: http://bbs.leocoding.onliine
+    description: 测试环境
+
+paths:
+  /auth/register/send-code:
+    post:
+      tags:
+        - 用户认证
+      summary: 发送注册验证码
+      description: |
+        向指定邮箱发送注册验证码，用于用户注册时的邮箱验证。
+        
+        **注意事项：**
+        - 同一邮箱1分钟内只能发送一次验证码
+        - 验证码有效期为10分钟
+        - 邮箱格式必须正确
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+            example: "user@example.com"
+          description: 用户邮箱地址
+      responses:
+        '200':
+          description: 验证码发送成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+
+  /notifications:
+    get:
+      tags:
+        - 通知
+      summary: 分页获取通知列表
+      description: |
+        获取当前登录用户的通知列表，按照创建时间倒序排序。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,desc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPageResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /notifications/unread-count:
+    get:
+      tags:
+        - 通知
+      summary: 获取未读通知数量
+      description: |
+        返回当前登录用户的未读通知数量。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LongResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /notifications/{notificationId}/read:
+    patch:
+      tags:
+        - 通知
+      summary: 标记通知为已读
+      description: |
+        将指定通知标记为已读，返回更新后的通知详情。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: 通知ID
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationDetailResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 通知不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /notifications/read-all:
+    patch:
+      tags:
+        - 通知
+      summary: 批量标记通知为已读
+      description: |
+        将当前用户所有未读通知标记为已读，返回被更新的通知数量。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_email:
+                  summary: 邮箱格式错误
+                  value:
+                    code: 10001
+                    message: "Invalid parameters"
+                    data: 
+                      email: "邮箱格式不正确"
+                email_exists:
+                  summary: 邮箱已存在
+                  value:
+                    code: 20003
+                    message: "User already exists"
+                    data: null
+
+  /reports:
+    post:
+      tags:
+        - 举报
+      summary: 提交举报
+      description: |
+        提交针对用户、帖子或评论的举报。举报内容仅举报者本人可见。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReportRequest'
+      responses:
+        '200':
+          description: 举报提交成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponse'
+              example:
+                code: 10000
+                message: "Success"
+                data:
+                  id: 5001
+                  status: PENDING
+                  target:
+                    type: POST
+                    id: 2104
+                    title: "考试心得分享"
+                    snippet: "帖子中包含外部推广链接"
+                  reason: "发布广告内容"
+                  description: "该帖子多次出现外部广告链接，影响正常讨论"
+                  result: null
+                  resultNotified: false
+                  resolvedAt: null
+                  createdAt: "2024-06-01T10:15:00Z"
+                  updatedAt: "2024-06-01T10:15:00Z"
+        '400':
+          description: 参数错误或举报对象不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags:
+        - 举报
+      summary: 查询我的举报记录
+      description: |
+        分页查询当前登录用户提交的举报记录，按创建时间倒序返回。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，默认 `createdAt,desc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportPageResponse'
+              example:
+                code: 10000
+                message: "Success"
+                data:
+                  content:
+                    - id: 5001
+                      status: RESOLVED
+                      target:
+                        type: POST
+                        id: 2104
+                        title: "考试心得分享"
+                        snippet: "帖子中包含外部推广链接"
+                      reason: "发布广告内容"
+                      description: "该帖子多次出现外部广告链接，影响正常讨论"
+                      result: "已确认违规，帖子已下线处理"
+                      resultNotified: true
+                      resolvedAt: "2024-06-02T09:30:00Z"
+                      createdAt: "2024-06-01T10:15:00Z"
+                      updatedAt: "2024-06-02T09:30:00Z"
+                    - id: 5000
+                      status: PENDING
+                      target:
+                        type: COMMENT
+                        id: 3201
+                        title: "明年考研交流"
+                        snippet: "评论中反复粘贴广告链接"
+                      reason: "恶意广告"
+                      description: "评论区多次粘贴同一培训机构的推广"
+                      result: null
+                      resultNotified: false
+                      resolvedAt: null
+                      createdAt: "2024-05-30T08:20:00Z"
+                      updatedAt: "2024-05-30T08:20:00Z"
+                  pageable:
+                    sort:
+                      sorted: true
+                      unsorted: false
+                      empty: false
+                    pageNumber: 0
+                    pageSize: 10
+                    offset: 0
+                    paged: true
+                    unpaged: false
+                  totalElements: 2
+                  totalPages: 1
+                  size: 10
+                  number: 0
+                  sort:
+                    sorted: true
+                    unsorted: false
+                    empty: false
+                  numberOfElements: 2
+                  first: true
+                  last: true
+                  empty: false
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reports/{reportId}:
+    get:
+      tags:
+        - 举报
+      summary: 查看举报详情
+      description: |
+        获取当前登录用户的举报详情，仅能查看本人提交的举报。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: 举报ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponse'
+              example:
+                code: 10000
+                message: "Success"
+                data:
+                  id: 5001
+                  status: RESOLVED
+                  target:
+                    type: POST
+                    id: 2104
+                    title: "考试心得分享"
+                    snippet: "帖子中包含外部推广链接"
+                  reason: "发布广告内容"
+                  description: "该帖子多次出现外部广告链接，影响正常讨论"
+                  result: "已确认违规，帖子已下线处理"
+                  resultNotified: true
+                  resolvedAt: "2024-06-02T09:30:00Z"
+                  createdAt: "2024-06-01T10:15:00Z"
+                  updatedAt: "2024-06-02T09:30:00Z"
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 举报不存在或无权访问
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reports/{reportId}/result:
+    patch:
+      tags:
+        - 举报
+      summary: 发布举报处理结果
+      description: |
+        管理员在审核完举报后，调用此接口更新举报状态并向举报者发送通知。
+        
+        **权限要求：** 需要管理员登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: 举报ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportResultRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponse'
+              example:
+                code: 10000
+                message: "Success"
+                data:
+                  id: 5001
+                  status: RESOLVED
+                  target:
+                    type: COMMENT
+                    id: 3201
+                    title: "明年考研交流"
+                    snippet: "评论中反复粘贴广告链接"
+                  reason: "恶意广告"
+                  description: "评论区多次粘贴同一培训机构的推广"
+                  result: "经审核确认违规，该评论和关联账号已处理"
+                  resultNotified: true
+                  resolvedAt: "2024-06-02T09:45:00Z"
+                  createdAt: "2024-06-01T07:12:00Z"
+                  updatedAt: "2024-06-02T09:45:00Z"
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 权限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 举报不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: 请求过于频繁
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: 10004
+                message: "Too many requests"
+                data: null
+
+  /auth/register:
+    post:
+      tags:
+        - 用户认证
+      summary: 用户注册
+      description: |
+        通过邮箱验证码完成用户注册。需要先调用发送验证码接口获取验证码。
+        
+        **注册流程：**
+        1. 调用 `/auth/register/send-code` 发送验证码
+        2. 用户收到验证码后，调用此接口完成注册
+        3. 注册成功后可直接登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: 注册失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validation_error:
+                  summary: 参数验证失败
+                  value:
+                    code: 10001
+                    message: "Invalid parameters"
+                    data:
+                      username: "用户名长度必须在2-50个字符之间"
+                      password: "密码长度必须在8-20个字符之间"
+                username_occupied:
+                  summary: 用户名已被占用
+                  value:
+                    code: 20003
+                    message: "User already exists"
+                    data: null
+                verification_expired:
+                  summary: 验证码已过期
+                  value:
+                    code: 10001
+                    message: "Invalid parameters"
+                    data: null
+
+  /auth/register/wechat:
+    post:
+      tags:
+        - 用户认证
+      summary: 微信小程序注册
+      description: |
+        通过微信小程序授权码完成用户注册。
+        
+        **使用说明：**
+        - 需要微信小程序调用wx.login()获取code
+        - 服务端会通过code获取用户的OpenID
+        - 同一个OpenID只能注册一次
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WeChatRegisterRequest'
+      responses:
+        '200':
+          description: 微信注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeChatRegisterResponse'
+
+  /auth/login/send-code:
+    post:
+      tags:
+        - 用户认证  
+      summary: 发送登录验证码
+      description: |
+        向已注册的邮箱发送登录验证码。
+        
+        **注意事项：**
+        - 邮箱必须已经注册
+        - 验证码有效期为10分钟
+        - 同一邮箱1分钟内只能发送一次
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+            example: "user@example.com"
+          description: 已注册的用户邮箱
+      responses:
+        '200':
+          description: 验证码发送成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          description: 邮箱不存在或格式错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/reset-password/send-code:
+    post:
+      tags:
+        - 用户认证
+      summary: 发送密码重置验证码
+      description: |
+        向已注册的邮箱发送密码重置验证码。
+        
+        **使用场景：**
+        - 用户忘记密码时使用
+        - 验证码有效期为10分钟
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+            example: "user@example.com"
+          description: 需要重置密码的用户邮箱
+      responses:
+        '200':
+          description: 验证码发送成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          description: 邮箱不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/reset-password:
+    post:
+      tags:
+        - 用户认证
+      summary: 重置密码
+      description: |
+        通过邮箱验证码重置用户密码。
+        
+        **操作流程：**
+        1. 先调用发送密码重置验证码接口
+        2. 用户收到验证码后调用此接口
+        3. 密码重置成功后需要重新登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordUpdateRequest'
+      responses:
+        '200':
+          description: 密码重置成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetResponse'
+        '400':
+          description: 重置失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags:
+        - 用户认证
+      summary: 用户名密码登录
+      description: |
+        使用用户名和密码进行登录认证。
+        
+        **登录流程：**
+        1. 提供用户名和密码
+        2. 登录成功返回JWT Token
+        3. 后续请求需在Authorization头中携带Token
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UsernamePasswordLoginRequest'
+      responses:
+        '200':
+          description: 登录成功
+          headers:
+            Authorization:
+              description: JWT Token，格式为 "Bearer <token>"
+              schema:
+                type: string
+                example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginSuccessResponse'
+        '401':
+          description: 用户名或密码错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: 20002
+                message: "Incorrect password"
+                data: null
+
+  /auth/login-with-code:
+    post:
+      tags:
+        - 用户认证
+      summary: 邮箱验证码登录
+      description: |
+        使用邮箱验证码进行登录认证。
+        
+        **登录流程：**
+        1. 先调用 `/auth/login/send-code` 发送验证码
+        2. 用户收到验证码后调用此接口
+        3. 登录成功返回JWT Token
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmailCodeLoginRequest'
+      responses:
+        '200':
+          description: 登录成功
+          headers:
+            Authorization:
+              description: JWT Token，格式为 "Bearer <token>"
+              schema:
+                type: string
+                example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginSuccessResponse'
+        '400':
+          description: 验证码错误或已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 认证失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login-with-wechat:
+    post:
+      tags:
+        - 用户认证
+      summary: 微信小程序登录
+      description: |
+        使用微信小程序授权码进行登录认证。
+        
+        **登录流程：**
+        1. 微信小程序调用wx.login()获取code
+        2. 将code发送到此接口进行认证
+        3. 登录成功返回JWT Token
+        
+        **注意事项：**
+        - code只能使用一次
+        - 用户必须已经通过微信注册
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/WeChatLoginRequest'
+      responses:
+        '200':
+          description: 登录成功
+          headers:
+            Authorization:
+              description: JWT Token，格式为 "Bearer <token>"
+              schema:
+                type: string
+                example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginSuccessResponse'
+        '400':
+          description: 微信授权码无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 用户未注册或认证失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /user:
+    get:
+      tags:
+        - 用户管理
+      summary: 获取当前用户信息
+      description: |
+        获取当前登录用户的详细信息。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 获取用户信息成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetails'
+        '401':
+          description: 未登录或token已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /user/{username}:
+    get:
+      tags:
+        - 用户管理
+      summary: 根据用户名获取用户信息
+      description: |
+        获取指定用户名的用户公开信息。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "johndoe"
+          description: 用户名
+      responses:
+        '200':
+          description: 获取用户信息成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetails'
+        '404':
+          description: 用户不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /user/{username}/avatar:
+    post:
+      tags:
+        - 用户管理
+      summary: 获取头像上传链接
+      description: |
+        获取用于上传用户头像的预签名URL和访问URL。
+        
+        **权限要求：** 只能为自己上传头像
+        **文件限制：**
+        - 支持的格式：image/jpeg, image/png, image/gif
+        - 最大文件大小：5MB
+        
+        **返回信息：**
+        - uploadUrl: 用于上传头像文件的预签名URL
+        - accessUrl: 上传成功后访问头像的URL
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "johndoe"
+          description: 用户名（必须是当前登录用户）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+      responses:
+        '200':
+          description: 获取上传链接成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvatarUploadResponse'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                file_too_large:
+                  summary: 文件过大
+                  value:
+                    code: 90004
+                    message: "File upload failed"
+                    data: "File size exceeds limit"
+                invalid_type:
+                  summary: 文件类型不支持
+                  value:
+                    code: 90004
+                    message: "File upload failed" 
+                    data: "Unsupported file type"
+        '403':
+          description: 无权限操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /user/{username}/profile:
+    patch:
+      tags:
+        - 用户管理
+      summary: 更新用户资料
+      description: |
+        更新用户的个人资料信息。
+        
+        **权限要求：** 只能更新自己的资料
+        **可更新字段：**
+        - nickname: 昵称（最大100字符）
+        - bio: 个人简介（最大1023字符）
+        - profileSlug: 个人页面地址（最大100字符）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "johndoe"
+          description: 用户名（必须是当前登录用户）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: 更新成功，返回更新后的用户信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetails'
+        '400':
+          description: 参数验证失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 用户不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/draft:
+    get:
+      tags:
+        - 帖子管理
+      summary: 获取当前用户帖子草稿
+      description: |
+        获取当前登录用户最新保存的帖子草稿。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: 获取草稿成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/draft/{draftId}:
+    put:
+      tags:
+        - 帖子管理
+      summary: 编辑帖子草稿
+      description: |
+        更新指定草稿的标题、正文或分类信息。
+        
+        **权限要求：** 需要登录且必须是草稿作者
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 草稿ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftContentEditorRequest'
+      responses:
+        '200':
+          description: 草稿更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限编辑该草稿
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 草稿不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/draft/{draftId}/publish:
+    post:
+      tags:
+        - 帖子管理
+      summary: 发布帖子草稿
+      description: |
+        将指定草稿发布为公开帖子。
+        
+        **权限要求：** 需要登录且必须是草稿作者
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 草稿ID
+      responses:
+        '200':
+          description: 发布成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '400':
+          description: 草稿状态不允许发布或内容存在敏感风险
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限发布该草稿
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 草稿不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts:
+    get:
+      tags:
+        - 帖子管理
+      summary: 分页查询公开帖子
+      description: |
+        获取已发布帖子列表，支持按分类筛选与分页。
+        
+        **默认排序：** 热度优先
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "学习心得"
+          description: 按分类过滤帖子
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,desc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPageResponse'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+        - 帖子管理
+      summary: 直接发布帖子
+      description: |
+        直接发布一个仅包含文字内容的帖子，跳过草稿箱流程。
+
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePostRequest'
+      responses:
+        '200':
+          description: 发布成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '400':
+          description: 请求参数错误或内容存在敏感风险
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validation_failed:
+                  summary: 参数校验失败
+                  value:
+                    code: 10001
+                    message: "Invalid parameters"
+                    data:
+                      title: "标题不能为空"
+                sensitive_content:
+                  summary: 内容包含敏感词
+                  value:
+                    code: 10001
+                    message: "Invalid parameters"
+                    data:
+                      content: "Content contains prohibited expressions."
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/hot:
+    get:
+      tags:
+        - 帖子管理
+      summary: 获取热门帖子
+      description: |
+        获取系统推荐的热门帖子列表，支持分页。
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,desc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPageResponse'
+
+  /posts/search:
+    get:
+      tags:
+        - 帖子管理
+      summary: 搜索帖子
+      description: |
+        根据关键词搜索已发布帖子，支持模糊匹配。
+      parameters:
+        - name: keyword
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "计算机网络"
+          description: 搜索关键词
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,desc`
+      responses:
+        '200':
+          description: 搜索成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPageResponse'
+        '400':
+          description: 搜索条件无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}:
+    parameters:
+      - name: postId
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: 帖子ID
+    get:
+      tags:
+        - 帖子管理
+      summary: 获取帖子详情
+      description: |
+        根据帖子ID查看已发布帖子的完整信息。
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '404':
+          description: 帖子不存在或未发布
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - 帖子管理
+      summary: 删除帖子
+      description: |
+        删除指定帖子。
+        
+        **权限要求：** 需要登录且必须是帖子作者或具有管理权限
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: 删除结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限删除该帖子
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}/toggle-status:
+    patch:
+      tags:
+        - 帖子管理
+      summary: 切换帖子上下线状态
+      description: |
+        在上线与下线状态间切换帖子，常用于隐藏或恢复帖子。
+        
+        **权限要求：** 需要登录且必须是帖子作者
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 状态切换成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限执行该操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}/to-draft:
+    patch:
+      tags:
+        - 帖子管理
+      summary: 将帖子转为草稿
+      description: |
+        将已发布的帖子重新保存为草稿状态，用户可继续编辑。
+        
+        **权限要求：** 需要登录且必须是帖子作者
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 转换成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限执行该操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}/publish:
+    patch:
+      tags:
+        - 帖子管理
+      summary: 发布已存在的帖子
+      description: |
+        将草稿或下线的帖子重新发布。
+        
+        **权限要求：** 需要登录且必须是帖子作者
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 发布成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '400':
+          description: 帖子状态不允许发布或内容存在敏感风险
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限执行该操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/user/{userId}:
+    get:
+      tags:
+        - 帖子管理
+      summary: 查看用户发布的帖子
+      description: |
+        根据用户ID分页查询该用户发布的公开帖子。
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 用户ID
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,desc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPageResponse'
+
+  /posts/{postId}/like:
+    post:
+      tags:
+        - 帖子互动
+      summary: 点赞帖子
+      description: |
+        为指定帖子点赞，返回点赞后的状态。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 点赞成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子不存在或不可操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - 帖子互动
+      summary: 取消点赞帖子
+      description: |
+        取消当前用户对指定帖子的点赞。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 取消点赞成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子不存在或不可操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}/like/status:
+    get:
+      tags:
+        - 帖子互动
+      summary: 查询帖子点赞状态
+      description: |
+        判断当前登录用户是否已点赞指定帖子。未登录时返回`false`。
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}/like/count:
+    get:
+      tags:
+        - 帖子互动
+      summary: 获取帖子点赞数
+      description: |
+        返回指定帖子的总点赞数量。
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/liked:
+    get:
+      tags:
+        - 帖子互动
+      summary: 获取当前用户点赞的帖子
+      description: |
+        分页返回当前登录用户点赞过的帖子列表。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,desc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPageResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/user/{userId}/liked:
+    get:
+      tags:
+        - 帖子互动
+      summary: 获取用户点赞的帖子
+      description: |
+        分页返回指定用户点赞过的帖子列表，仅支持查看本人数据。
+        
+        **权限要求：** 需要登录且只能查看自己的点赞列表
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 用户ID
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,desc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPageResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限查看他人点赞列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/user/{userId}/liked/count:
+    get:
+      tags:
+        - 帖子互动
+      summary: 获取用户点赞帖子数量
+      description: |
+        统计指定用户点赞过的帖子数量，仅支持本人查看。
+        
+        **权限要求：** 需要登录且只能查看自己的统计
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 用户ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限查看他人统计
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}/favor:
+    post:
+      tags:
+        - 帖子互动
+      summary: 收藏帖子
+      description: |
+        收藏指定帖子，返回收藏后的状态。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 收藏成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子不存在或不可收藏
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - 帖子互动
+      summary: 取消收藏帖子
+      description: |
+        取消当前用户对指定帖子的收藏。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 取消收藏成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子不存在或不可收藏
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}/favor/status:
+    get:
+      tags:
+        - 帖子互动
+      summary: 查询帖子收藏状态
+      description: |
+        判断当前登录用户是否已收藏指定帖子。未登录时返回`false`。
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}/favor/count:
+    get:
+      tags:
+        - 帖子互动
+      summary: 获取帖子收藏数
+      description: |
+        返回指定帖子的收藏总数。
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/favored:
+    get:
+      tags:
+        - 帖子互动
+      summary: 获取当前用户收藏的帖子
+      description: |
+        分页返回当前登录用户收藏的帖子列表。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,desc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPageResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/user/{userId}/favored:
+    get:
+      tags:
+        - 帖子互动
+      summary: 获取用户收藏的帖子
+      description: |
+        分页返回指定用户收藏的帖子列表，仅支持查看本人数据。
+        
+        **权限要求：** 需要登录且只能查看自己的收藏列表
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 用户ID
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,desc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPageResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限查看他人收藏列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/user/{userId}/favored/count:
+    get:
+      tags:
+        - 帖子互动
+      summary: 获取用户收藏帖子数量
+      description: |
+        统计指定用户收藏的帖子数量，仅支持本人查看。
+        
+        **权限要求：** 需要登录且只能查看自己的统计
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 用户ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限查看他人统计
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/batch/like:
+    post:
+      tags:
+        - 帖子互动
+      summary: 批量点赞帖子
+      description: |
+        批量为帖子点赞，返回每个帖子的操作结果。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: integer
+              example: [ 1, 2, 3 ]
+      responses:
+        '200':
+          description: 批量点赞结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerBooleanMapResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 部分帖子不存在或不可操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - 帖子互动
+      summary: 批量取消点赞帖子
+      description: |
+        批量取消对帖子的点赞，返回每个帖子的操作结果。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: integer
+              example: [ 1, 2, 3 ]
+      responses:
+        '200':
+          description: 批量取消点赞结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerBooleanMapResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 部分帖子不存在或不可操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/batch/like/status:
+    get:
+      tags:
+        - 帖子互动
+      summary: 批量查询帖子点赞状态
+      description: |
+        批量查询当前登录用户对多个帖子的点赞状态。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postIds
+          in: query
+          required: true
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
+          description: 帖子ID集合，可重复提供参数，如`postIds=1&postIds=2`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerBooleanMapResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/batch/favor:
+    post:
+      tags:
+        - 帖子互动
+      summary: 批量收藏帖子
+      description: |
+        批量收藏帖子，返回每个帖子的操作结果。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: integer
+              example: [ 1, 2, 3 ]
+      responses:
+        '200':
+          description: 批量收藏结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerBooleanMapResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 部分帖子不存在或不可操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - 帖子互动
+      summary: 批量取消收藏帖子
+      description: |
+        批量取消收藏帖子，返回每个帖子的操作结果。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: integer
+              example: [ 1, 2, 3 ]
+      responses:
+        '200':
+          description: 批量取消收藏结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerBooleanMapResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 部分帖子不存在或不可操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/batch/favor/status:
+    get:
+      tags:
+        - 帖子互动
+      summary: 批量查询帖子收藏状态
+      description: |
+        批量查询当前登录用户对多个帖子的收藏状态。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postIds
+          in: query
+          required: true
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
+          description: 帖子ID集合，可重复提供参数，如`postIds=1&postIds=2`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerBooleanMapResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}/media:
+    get:
+      tags:
+        - 帖子媒体
+      summary: 获取帖子媒体列表
+      description: |
+        获取帖子关联的媒体资源列表，未登录访问仅返回公开资源。
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediumListResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+        - 帖子媒体
+      summary: 上传帖子媒体
+      description: |
+        为帖子草稿上传媒体资源，返回上传URL与访问URL。
+        
+        **权限要求：** 需要登录且必须是帖子作者
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostMediumUploadRequest'
+      responses:
+        '200':
+          description: 上传凭证生成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediumUploadResponse'
+        '400':
+          description: 请求参数错误或超出限制
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限上传媒体
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子不存在或状态不允许上传
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/{postId}/media/{mediumId}:
+    delete:
+      tags:
+        - 帖子媒体
+      summary: 删除帖子媒体
+      description: |
+        从帖子草稿中移除指定媒体资源，返回剩余媒体列表。
+        
+        **权限要求：** 需要登录且必须是帖子作者
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+        - name: mediumId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 媒体资源ID
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediumListResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限删除媒体
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子或媒体不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - 帖子媒体
+      summary: 更新帖子媒体类型
+      description: |
+        修改媒体资源的类型（如封面、正文图等）。
+        
+        **权限要求：** 需要登录且必须是帖子作者
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+        - name: mediumId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 媒体资源ID
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 媒体类型，例如`cover`、`image`
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediumResponse'
+        '400':
+          description: 类型参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限更新媒体
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子或媒体不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts/media/{mediumId}/access:
+    get:
+      tags:
+        - 帖子媒体
+      summary: 检查媒体访问权限
+      description: |
+        校验当前登录用户是否拥有访问指定媒体资源的权限。未登录视为无权限。
+      parameters:
+        - name: mediumId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 媒体资源ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '404':
+          description: 媒体不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments:
+    post:
+      tags:
+        - 评论管理
+      summary: 发表评论
+      description: |
+        在帖子下创建新的评论或回复。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommentRequest'
+      responses:
+        '200':
+          description: 评论创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostCommentEntityResponse'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validation_failed:
+                  summary: 参数校验失败
+                  value:
+                    code: 10001
+                    message: "Invalid parameters"
+                    data:
+                      postId: "帖子ID不能为空"
+                sensitive_content:
+                  summary: 内容包含敏感词
+                  value:
+                    code: 10001
+                    message: "Invalid parameters"
+                    data:
+                      content: "Content contains prohibited expressions."
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限评论
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子或父评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/direct:
+    post:
+      tags:
+        - 评论管理
+      summary: 直接发表评论
+      description: |
+        直接发布仅包含文字内容的评论或回复，跳过草稿箱流程。
+
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommentRequest'
+      responses:
+        '200':
+          description: 评论发布成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostCommentEntityResponse'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validation_failed:
+                  summary: 参数校验失败
+                  value:
+                    code: 10001
+                    message: "Invalid parameters"
+                    data:
+                      postId: "帖子ID不能为空"
+                sensitive_content:
+                  summary: 内容包含敏感词
+                  value:
+                    code: 10001
+                    message: "Invalid parameters"
+                    data:
+                      content: "Content contains prohibited expressions."
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帖子或父评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/{commentId}:
+    parameters:
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: 评论ID
+    get:
+      tags:
+        - 评论管理
+      summary: 获取评论详情
+      description: |
+        根据评论ID获取评论内容及互动信息。
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentResponseWrapper'
+        '404':
+          description: 评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+        - 评论管理
+      summary: 编辑评论
+      description: |
+        更新评论内容，仅允许作者本人操作。
+        
+        **权限要求：** 需要登录并拥有该评论
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCommentRequest'
+      responses:
+        '200':
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostCommentEntityResponse'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限编辑该评论
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - 评论管理
+      summary: 删除评论
+      description: |
+        删除指定评论，需作者本人或拥有管理权限。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限删除该评论
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/post/{postId}:
+    get:
+      tags:
+        - 评论管理
+      summary: 分页获取帖子评论
+      description: |
+        获取帖子下的评论列表（包含互动信息），支持分页。
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,asc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentPageResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/{commentId}/replies:
+    get:
+      tags:
+        - 评论管理
+      summary: 分页获取评论回复
+      description: |
+        获取某条评论的回复列表（包含互动信息），支持分页。
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 父评论ID
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,asc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentPageResponse'
+        '404':
+          description: 评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/user/{userId}:
+    get:
+      tags:
+        - 评论管理
+      summary: 分页获取用户评论
+      description: |
+        获取指定用户发表的评论列表，仅本人可查看完整数据。
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 用户ID
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 页码，从0开始
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+          description: 每页数量
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 排序字段，格式示例：`createdAt,desc`
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentPageResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限查看他人评论列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/draft:
+    get:
+      tags:
+        - 评论管理
+      summary: 获取评论草稿
+      description: |
+        获取当前用户针对指定帖子的评论草稿。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: postId
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: 草稿对应的帖子ID
+        - name: parentCommentId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: 草稿回复的父评论ID，顶级评论留空
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostCommentEntityResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 草稿不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+        - 评论管理
+      summary: 编辑评论草稿
+      description: |
+        更新评论草稿的目标与内容。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftCommentEditorRequest'
+      responses:
+        '200':
+          description: 草稿更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostCommentEntityResponse'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限编辑草稿
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 草稿不存在或目标无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - 评论管理
+      summary: 清空评论草稿
+      description: |
+        删除当前用户的评论草稿。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: 清空成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 草稿不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/draft/publish:
+    post:
+      tags:
+        - 评论管理
+      summary: 发布评论草稿
+      description: |
+        发布当前用户的评论草稿。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: 发布成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostCommentEntityResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限发布草稿
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 草稿不存在或状态不允许发布
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/draft/exists:
+    get:
+      tags:
+        - 评论管理
+      summary: 检查评论草稿是否存在
+      description: |
+        返回当前用户是否存在未发布的评论草稿。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/{commentId}/like:
+    post:
+      tags:
+        - 评论管理
+      summary: 点赞或取消点赞评论
+      description: |
+        切换评论的点赞状态，返回当前状态。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 评论ID
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/{commentId}/like/status:
+    get:
+      tags:
+        - 评论管理
+      summary: 查询评论点赞状态
+      description: |
+        判断当前登录用户是否点赞指定评论。未登录时返回`false`。
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 评论ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        '404':
+          description: 评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/{commentId}/like/count:
+    get:
+      tags:
+        - 评论管理
+      summary: 获取评论点赞数
+      description: |
+        返回评论被点赞的总次数。
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 评论ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LongResponse'
+        '404':
+          description: 评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/post/{postId}/count:
+    get:
+      tags:
+        - 评论管理
+      summary: 统计帖子评论数量
+      description: |
+        返回帖子下评论（含回复）的总数量。
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/post/{postId}/count/top-level:
+    get:
+      tags:
+        - 评论管理
+      summary: 统计帖子顶级评论数量
+      description: |
+        返回帖子下顶级评论（不含回复）的数量。
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 帖子ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerResponse'
+        '404':
+          description: 帖子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/{commentId}/replies/count:
+    get:
+      tags:
+        - 评论管理
+      summary: 统计评论回复数量
+      description: |
+        返回指定评论下的回复数量。
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 评论ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerResponse'
+        '404':
+          description: 评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/user/{userId}/count:
+    get:
+      tags:
+        - 评论管理
+      summary: 统计用户评论数量
+      description: |
+        返回指定用户发表的评论数量，仅支持本人查看。
+        
+        **权限要求：** 需要登录
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 用户ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegerResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限查看他人统计
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/{commentId}/media:
+    get:
+      tags:
+        - 评论媒体
+      summary: 获取评论媒体列表
+      description: |
+        获取评论关联的媒体资源列表，未登录访问仅返回公开资源。
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 评论ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediumListResponse'
+        '404':
+          description: 评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+        - 评论媒体
+      summary: 上传评论媒体
+      description: |
+        为评论上传媒体资源，返回上传URL与访问URL。
+        
+        **权限要求：** 需要登录且必须是评论作者
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 评论ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentMediumUploadRequest'
+      responses:
+        '200':
+          description: 上传凭证生成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediumUploadResponse'
+        '400':
+          description: 请求参数错误或超出限制
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限上传媒体
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 评论不存在或状态不允许上传
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /comments/{commentId}/media/{mediumId}:
+    delete:
+      tags:
+        - 评论媒体
+      summary: 删除评论媒体
+      description: |
+        删除评论关联的媒体资源，返回剩余媒体列表。
+        
+        **权限要求：** 需要登录且必须是评论作者
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 评论ID
+        - name: mediumId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 媒体资源ID
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediumListResponse'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权限删除媒体
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 评论或媒体不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT Token认证，格式为：Bearer <token>
+        
+        获取方式：
+        1. 用户名密码登录：POST /auth/login
+        2. 邮箱验证码登录：POST /auth/login-with-code
+        3. 微信小程序登录：POST /auth/login-with-wechat
+        
+        Token会在登录成功后通过响应头Authorization和响应体data.token同时返回。
+
+  schemas:
+    # ==================== 请求模型 ====================
+    RegisterRequest:
+      type: object
+      required:
+        - user
+        - verification
+      properties:
+        user:
+          $ref: '#/components/schemas/CreateUserRequest'
+        verification:
+          $ref: '#/components/schemas/VerificationParam'
+      example:
+        user:
+          username: "johndoe"
+          password: "password123"
+          email: "john@example.com"
+          nickname: "John Doe"
+          bio: "Hello, I'm John!"
+        verification:
+          principle: "john@example.com"
+          token: "reg_abc123"
+          scope: "register"
+          credential: "123456"
+
+    CreateUserRequest:
+      type: object
+      required:
+        - username
+        - password
+        - email
+      properties:
+        username:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: 用户名，2-50个字符，支持字母、数字、下划线
+          example: "johndoe"
+        password:
+          type: string
+          minLength: 8
+          maxLength: 20
+          description: 密码，8-20个字符
+          example: "password123"
+        email:
+          type: string
+          format: email
+          description: 邮箱地址
+          example: "john@example.com"
+        nickname:
+          type: string
+          maxLength: 100
+          description: 昵称，最大100个字符
+          example: "John Doe"
+        bio:
+          type: string
+          maxLength: 1023
+          description: 个人简介，最大1023个字符
+          example: "Hello, I'm John!"
+
+    WeChatRegisterRequest:
+      type: object
+      required:
+        - code
+        - username
+        - password
+      properties:
+        code:
+          type: string
+          description: 微信小程序授权码，通过wx.login()获取
+          example: "061234567890abcdef"
+        username:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: 用户名
+          example: "wechat_user"
+        password:
+          type: string
+          minLength: 8
+          maxLength: 20
+          description: 登录密码
+          example: "password123"
+        nickname:
+          type: string
+          maxLength: 100
+          description: 昵称
+          example: "微信用户"
+        bio:
+          type: string
+          maxLength: 1023
+          description: 个人简介
+          example: "通过微信注册的用户"
+
+    PasswordUpdateRequest:
+      type: object
+      required:
+        - email
+        - password
+        - verification
+      properties:
+        email:
+          type: string
+          format: email
+          description: 用户邮箱
+          example: "john@example.com"
+        password:
+          type: string
+          minLength: 8
+          maxLength: 20
+          description: 新密码
+          example: "newpassword123"
+        verification:
+          $ref: '#/components/schemas/VerificationParam'
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+          maxLength: 100
+          description: 昵称
+          example: "New Nickname"
+        bio:
+          type: string
+          maxLength: 1023
+          description: 个人简介
+          example: "更新后的个人简介"
+        profileSlug:
+          type: string
+          maxLength: 100
+          description: 个人页面地址
+          example: "my-profile"
+
+    UploadRequest:
+      type: object
+      required:
+        - type
+        - size
+      properties:
+        type:
+          type: string
+          description: 文件MIME类型
+          enum:
+            - image/jpeg
+            - image/png
+            - image/gif
+          example: "image/jpeg"
+        size:
+          type: integer
+          minimum: 1
+          maximum: 5242880
+          description: 文件大小（字节），最大5MB
+          example: 1024000
+
+    VerificationParam:
+      type: object
+      required:
+        - principle
+        - token
+        - scope
+        - credential
+      properties:
+        principle:
+          type: string
+          description: 验证主体（通常是邮箱地址）
+          example: "john@example.com"
+        token:
+          type: string
+          description: 验证令牌（从发送验证码接口获取）
+          example: "reg_abc123"
+        scope:
+          type: string
+          description: 验证范围
+          enum:
+            - register
+            - login
+            - reset_password
+          example: "register"
+        credential:
+          type: string
+          description: 验证码（6位数字）
+          example: "123456"
+
+    UsernamePasswordLoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: 用户名
+          example: "johndoe"
+        password:
+          type: string
+          description: 密码
+          example: "password123"
+
+    EmailCodeLoginRequest:
+      type: object
+      required:
+        - principle
+        - token
+        - scope
+        - credential
+      properties:
+        principle:
+          type: string
+          description: 邮箱地址
+          example: "john@example.com"
+        token:
+          type: string
+          description: 验证令牌（从发送登录验证码接口获取）
+          example: "login_abc123"
+        scope:
+          type: string
+          description: 验证范围，登录时固定为"login"
+          enum:
+            - login
+          example: "login"
+        credential:
+          type: string
+          description: 邮箱验证码（6位数字）
+          example: "123456"
+
+    WeChatLoginRequest:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          type: string
+          description: 微信小程序授权码，通过wx.login()获取
+          example: "061234567890abcdef"
+
+    # ==================== 响应模型 ====================
+    AuthTokenResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: 响应状态码
+          example: 10000
+        message:
+          type: string
+          description: 响应消息
+          example: "Success"
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+              description: 验证令牌，用于后续验证
+              example: "reg_abc123def456"
+
+    RegisterResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          type: object
+          properties:
+            email:
+              type: string
+              format: email
+              description: 注册成功的邮箱地址
+              example: "john@example.com"
+
+    WeChatRegisterResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          type: object
+          properties:
+            openId:
+              type: string
+              description: 微信OpenID
+              example: "ox1234567890abcdef"
+
+    PasswordResetResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: 密码重置是否成功
+              example: true
+
+    LoginSuccessResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Login successful"
+        data:
+          type: object
+          properties:
+            username:
+              type: string
+              description: 登录用户名
+              example: "johndoe"
+            token:
+              type: string
+              description: JWT Token（也会在响应头Authorization中返回）
+              example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+    UserDetails:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          type: object
+          properties:
+            id:
+              type: integer
+              description: 用户ID
+              example: 123
+            username:
+              type: string
+              description: 用户名
+              example: "johndoe"
+            nickname:
+              type: string
+              description: 昵称
+              example: "John Doe"
+            bio:
+              type: string
+              description: 个人简介
+              example: "Hello, I'm John!"
+            profileSlug:
+              type: string
+              description: 个人页面地址
+              example: "my-profile"
+            avatarUrl:
+              type: string
+              description: 头像URL
+              example: "https://storage.example.com/avatar/123.jpg"
+            role:
+              type: string
+              enum:
+                - USER
+                - ADMIN
+                - MODERATOR
+              description: 用户角色
+              example: "USER"
+            status:
+              type: string
+              enum:
+                - Active
+                - Inactive
+                - Banned
+              description: 用户状态
+              example: "Active"
+            verifiedId:
+              type: integer
+              description: 认证信息ID
+              example: 456
+            createdAt:
+              type: string
+              format: date-time
+              description: 创建时间
+              example: "2024-01-01T00:00:00Z"
+            updatedAt:
+              type: string
+              format: date-time
+              description: 更新时间
+              example: "2024-01-01T12:00:00Z"
+
+    AvatarUploadResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          type: object
+          properties:
+            uploadUrl:
+              type: string
+              description: 预签名上传URL，用于上传头像文件
+              example: "https://storage.example.com/upload/avatar/abc123.jpg?signature=xyz"
+            accessUrl:
+              type: string
+              description: 头像访问URL，上传成功后可通过此URL访问头像
+              example: "https://storage.example.com/avatar/testuser.jpg"
+
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: 错误代码
+          example: 10001
+        message:
+          type: string
+          description: 错误消息
+          example: "Invalid parameters"
+        data:
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties:
+                type: string
+          description: 错误详细信息，验证失败时包含字段级错误
+          example:
+            username: "用户名长度必须在2-50个字符之间"
+            password: "密码长度必须在8-20个字符之间"
+
+    DraftContentEditorRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          maxLength: 255
+          description: 帖子标题
+          example: "如何准备计算机网络考试"
+        content:
+          type: string
+          description: 帖子正文内容（可为空表示继续保留原内容）
+          example: "分享一些复习计算机网络的资料和经验..."
+        category:
+          type: string
+          maxLength: 100
+          description: 帖子分类
+          example: "学习心得"
+
+    PostAuthor:
+      type: object
+      description: 帖子作者信息
+      properties:
+        id:
+          type: integer
+          example: 1001
+        username:
+          type: string
+          example: "johndoe"
+        nickname:
+          type: string
+          example: "约翰"
+        bio:
+          type: string
+          example: "喜欢分享编程经验"
+        profileSlug:
+          type: string
+          example: "john-profile"
+        avatarUrl:
+          type: string
+          format: uri
+          example: "https://cdn.example.com/avatar/john.jpg"
+        role:
+          type: string
+          enum:
+            - USER
+            - ADMIN
+            - MODERATOR
+          example: "USER"
+        status:
+          type: string
+          enum:
+            - Active
+            - Inactive
+            - Banned
+          example: "Active"
+        verifiedId:
+          type: integer
+          nullable: true
+          example: 10
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-02-01T10:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-05-01T12:30:00Z"
+
+    Medium:
+      type: object
+      description: 媒体资源信息
+      properties:
+        id:
+          type: string
+          example: "media_abc123"
+        displayUrl:
+          type: string
+          format: uri
+          description: 用于前端展示的访问地址
+          example: "https://cdn.example.com/post/media_abc123.jpg"
+        resourceUrl:
+          type: string
+          format: uri
+          description: 资源真实访问地址
+          example: "https://storage.example.com/media/media_abc123"
+        type:
+          type: string
+          description: 媒体类型，如image/video/cover等
+          example: "image"
+
+    PostDetail:
+      type: object
+      description: 帖子详细信息
+      properties:
+        id:
+          type: integer
+          example: 2001
+        author:
+          $ref: '#/components/schemas/PostAuthor'
+        title:
+          type: string
+          example: "计算机网络复习笔记"
+        content:
+          type: string
+          example: "这是一个关于计算机网络的详细复习资料..."
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Medium'
+        status:
+          type: string
+          enum:
+            - DRAFT
+            - PUBLISHED
+            - SUSPENDED
+            - UNDER_REVIEW
+          example: "PUBLISHED"
+        possiblySensitive:
+          type: boolean
+          example: false
+        category:
+          type: string
+          example: "学习心得"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-05-01T12:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-05-02T08:30:00Z"
+
+    SortInfo:
+      type: object
+      description: 排序信息
+      properties:
+        sorted:
+          type: boolean
+          example: false
+        unsorted:
+          type: boolean
+          example: true
+        empty:
+          type: boolean
+          example: true
+
+    PageMetadata:
+      type: object
+      description: 分页元数据
+      properties:
+        sort:
+          $ref: '#/components/schemas/SortInfo'
+        pageNumber:
+          type: integer
+          description: 当前页码（从0开始）
+          example: 0
+        pageSize:
+          type: integer
+          description: 每页数量
+          example: 10
+        offset:
+          type: integer
+          description: 偏移量
+          example: 0
+        paged:
+          type: boolean
+          example: true
+        unpaged:
+          type: boolean
+          example: false
+
+    PostPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostDetail'
+        pageable:
+          $ref: '#/components/schemas/PageMetadata'
+        totalElements:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 5
+        size:
+          type: integer
+          example: 10
+        number:
+          type: integer
+          example: 0
+        sort:
+          $ref: '#/components/schemas/SortInfo'
+        numberOfElements:
+          type: integer
+          example: 10
+        first:
+          type: boolean
+          example: true
+        last:
+          type: boolean
+          example: false
+        empty:
+          type: boolean
+          example: false
+
+    PostResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          $ref: '#/components/schemas/PostDetail'
+
+    PostPageResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          $ref: '#/components/schemas/PostPage'
+
+    BooleanResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          type: boolean
+          example: true
+
+    IntegerResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          type: integer
+          example: 12
+
+    LongResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          type: integer
+          format: int64
+          example: 128
+
+    IntegerBooleanMapResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          type: object
+          additionalProperties:
+            type: boolean
+          description: 以帖子ID为键、布尔状态为值的映射
+          example:
+            "1": true
+            "2": false
+
+    NotificationUserSummary:
+      type: object
+      description: 触发通知的用户信息摘要
+      properties:
+        id:
+          type: integer
+          nullable: true
+          example: 1002
+        username:
+          type: string
+          nullable: true
+          example: "alice"
+        nickname:
+          type: string
+          nullable: true
+          example: "小艾"
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://cdn.example.com/avatar/alice.jpg"
+
+    NotificationType:
+      type: string
+      description: 通知类型
+      enum:
+        - POST_COMMENTED
+        - POST_LIKED
+        - POST_REPORTED
+        - USER_REPORTED
+        - REPORT_RESULT
+        - SYSTEM_ANNOUNCEMENT
+        - COMMENT_REPLIED
+        - COMMENT_LIKED
+      example: POST_COMMENTED
+
+    NotificationPriority:
+      type: string
+      description: 通知优先级
+      enum:
+        - LOW
+        - NORMAL
+        - HIGH
+        - CRITICAL
+      example: NORMAL
+
+    NotificationDetail:
+      type: object
+      description: 通知详细信息
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 5001
+        type:
+          $ref: '#/components/schemas/NotificationType'
+        priority:
+          $ref: '#/components/schemas/NotificationPriority'
+        title:
+          type: string
+          nullable: true
+          example: "你的帖子有新评论"
+        content:
+          type: string
+          nullable: true
+          example: "用户 bob 回复了你的帖子《考试心得分享》"
+        redirectUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://bbs.example.com/posts/2001#comment-3001"
+        sourceType:
+          type: string
+          nullable: true
+          example: "POST_COMMENT"
+        sourceId:
+          type: string
+          nullable: true
+          example: "3001"
+        sourceSnippet:
+          type: string
+          nullable: true
+          example: "太感谢你的笔记了！"
+        context:
+          type: object
+          additionalProperties: {}
+          description: 额外上下文信息，键值对形式
+
+    ReportTargetType:
+      type: string
+      description: 举报对象类型
+      enum:
+        - USER
+        - POST
+        - COMMENT
+      example: POST
+
+    ReportStatus:
+      type: string
+      description: 举报处理状态
+      enum:
+        - PENDING
+        - RESOLVED
+        - REJECTED
+      example: PENDING
+
+    ReportTargetInfo:
+      type: object
+      description: 举报对象摘要信息
+      properties:
+        type:
+          $ref: '#/components/schemas/ReportTargetType'
+        id:
+          type: integer
+          description: 举报对象ID
+          example: 1203
+        title:
+          type: string
+          nullable: true
+          description: 对象标题或昵称
+          example: "考试心得分享"
+        snippet:
+          type: string
+          nullable: true
+          description: 对象内容摘要
+          example: "该评论多次发送广告链接"
+
+    CreateReportRequest:
+      type: object
+      description: 举报提交请求参数
+      required:
+        - targetType
+        - targetId
+        - reason
+      properties:
+        targetType:
+          $ref: '#/components/schemas/ReportTargetType'
+        targetId:
+          type: integer
+          minimum: 1
+          description: 举报对象ID
+          example: 3345
+        reason:
+          type: string
+          maxLength: 255
+          description: 举报原因简述
+          example: "发布广告内容"
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+          description: 举报详细说明
+          example: "该用户在多个帖子评论区重复发布外部广告链接"
+
+    ReportResultRequest:
+      type: object
+      description: 举报处理结果请求参数
+      required:
+        - status
+        - result
+      properties:
+        status:
+          $ref: '#/components/schemas/ReportStatus'
+        result:
+          type: string
+          maxLength: 2000
+          description: 处理说明
+          example: "已确认违规，相关内容已删除。"
+        redirectUrl:
+          type: string
+          format: uri
+          maxLength: 1024
+          nullable: true
+          description: 举报结果跳转链接
+          example: "https://bbs.example.com/reports/5001"
+
+    ReportResponse:
+      type: object
+      description: 举报详情信息
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 5001
+        status:
+          $ref: '#/components/schemas/ReportStatus'
+        target:
+          $ref: '#/components/schemas/ReportTargetInfo'
+        reason:
+          type: string
+          description: 举报原因
+          example: "发布广告内容"
+        description:
+          type: string
+          nullable: true
+          description: 举报详细说明
+          example: "该用户在多个贴子下发布推广链接"
+        result:
+          type: string
+          nullable: true
+          description: 审核结果说明
+          example: "已确认违规，账号被禁言7天"
+        resultNotified:
+          type: boolean
+          description: 举报结果是否已通知举报者
+          example: true
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 举报审核完成时间
+          example: "2024-06-01T09:30:00Z"
+        createdAt:
+          type: string
+          format: date-time
+          description: 举报创建时间
+          example: "2024-05-31T10:15:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: 举报更新时间
+          example: "2024-05-31T10:15:00Z"
+      example:
+        postId: 2001
+        commentId: 3001
+        read:
+          type: boolean
+          description: 是否已读
+          example: false
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2024-06-01T08:30:20Z"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-06-01T08:20:05Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-06-01T08:30:20Z"
+        targetUserId:
+          type: integer
+          nullable: true
+          description: 收件用户ID
+          example: 1001
+        actor:
+          $ref: '#/components/schemas/NotificationUserSummary'
+          nullable: true
+
+    NotificationPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationDetail'
+        pageable:
+          $ref: '#/components/schemas/PageMetadata'
+        totalElements:
+          type: integer
+          format: int64
+          example: 8
+        totalPages:
+          type: integer
+          example: 1
+        size:
+          type: integer
+          example: 10
+        number:
+          type: integer
+          example: 0
+        sort:
+          $ref: '#/components/schemas/SortInfo'
+        numberOfElements:
+          type: integer
+          example: 8
+        first:
+          type: boolean
+          example: true
+        last:
+          type: boolean
+          example: true
+        empty:
+          type: boolean
+          example: false
+
+    ReportPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportResponse'
+        pageable:
+          $ref: '#/components/schemas/PageMetadata'
+        totalElements:
+          type: integer
+          format: int64
+          example: 2
+        totalPages:
+          type: integer
+          example: 1
+        size:
+          type: integer
+          example: 10
+        number:
+          type: integer
+          example: 0
+        sort:
+          $ref: '#/components/schemas/SortInfo'
+        numberOfElements:
+          type: integer
+          example: 2
+        first:
+          type: boolean
+          example: true
+        last:
+          type: boolean
+          example: true
+        empty:
+          type: boolean
+          example: false
+
+    NotificationDetailResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          $ref: '#/components/schemas/NotificationDetail'
+
+    NotificationPageResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          $ref: '#/components/schemas/NotificationPage'
+
+    ReportPageResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          $ref: '#/components/schemas/ReportPage'
+
+    EmptyResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          nullable: true
+          example: null
+
+    MediumListResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Medium'
+
+    MediumResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          $ref: '#/components/schemas/Medium'
+
+    PostMediumUploadRequest:
+      type: object
+      required:
+        - type
+        - size
+      properties:
+        type:
+          type: string
+          description: 媒体MIME类型，例如`image/jpeg`
+          example: "image/jpeg"
+        size:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 文件大小（字节）
+          example: 524288
+
+    CommentMediumUploadRequest:
+      type: object
+      required:
+        - type
+        - size
+      properties:
+        type:
+          type: string
+          description: 媒体MIME类型，例如`image/png`
+          example: "image/png"
+        size:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 文件大小（字节）
+          example: 204800
+
+    MediumUploadResult:
+      type: object
+      properties:
+        uploadUrl:
+          type: string
+          format: uri
+          description: 用于上传文件的预签名地址
+          example: "https://upload.example.com/post/abc123?signature=xyz"
+        accessUrl:
+          type: string
+          format: uri
+          description: 上传成功后访问媒体的地址
+          example: "https://cdn.example.com/post/abc123.jpg"
+
+    MediumUploadResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          $ref: '#/components/schemas/MediumUploadResult'
+
+    CreatePostRequest:
+      type: object
+      required:
+        - title
+        - content
+      properties:
+        title:
+          type: string
+          maxLength: 255
+          description: 帖子标题
+          example: "校园学习经验分享"
+        content:
+          type: string
+          description: 帖子正文内容
+          example: "今天整理了几条备考建议，大家可以交流一下。"
+        category:
+          type: string
+          maxLength: 100
+          nullable: true
+          description: 帖子分类，可选
+          example: "学习心得"
+
+    CreateCommentRequest:
+      type: object
+      required:
+        - postId
+        - content
+      properties:
+        postId:
+          type: integer
+          description: 评论所属帖子ID
+          example: 2001
+        content:
+          type: string
+          maxLength: 2000
+          description: 评论内容
+          example: "这篇帖子非常有帮助，谢谢分享！"
+        parentCommentId:
+          type: integer
+          nullable: true
+          description: 回复的父评论ID，顶级评论留空
+          example: 3001
+
+    UpdateCommentRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          maxLength: 2000
+          description: 更新后的评论内容
+          example: "补充一下最新的参考资料链接..."
+
+    DraftCommentEditorRequest:
+      type: object
+      required:
+        - postId
+      properties:
+        postId:
+          type: integer
+          description: 草稿目标帖子ID
+          example: 2001
+        parentCommentId:
+          type: integer
+          nullable: true
+          description: 草稿回复的父评论ID，顶级评论留空
+          example: 3001
+        content:
+          type: string
+          description: 草稿内容
+          example: "先写个开头，稍后再完善..."
+
+    PostCommentUser:
+      type: object
+      description: 评论作者信息
+      properties:
+        id:
+          type: integer
+          example: 1001
+        username:
+          type: string
+          example: "johndoe"
+        nickname:
+          type: string
+          example: "约翰"
+        avatarUrl:
+          type: string
+          format: uri
+          example: "https://cdn.example.com/avatar/john.jpg"
+
+    PostCommentEntity:
+      type: object
+      description: 评论实体信息
+      properties:
+        id:
+          type: integer
+          example: 3001
+        user:
+          $ref: '#/components/schemas/PostCommentUser'
+        parentPostId:
+          type: integer
+          nullable: true
+          description: 父评论ID
+          example: null
+        content:
+          type: string
+          example: "这篇文章写得很好！"
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Medium'
+        status:
+          type: string
+          enum:
+            - DRAFT
+            - PUBLISHED
+            - DELETED
+          example: "PUBLISHED"
+        comments:
+          type: integer
+          description: 回复数量
+          example: 2
+        likes:
+          type: integer
+          description: 点赞数量
+          example: 5
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-05-01T12:30:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-05-02T09:10:00Z"
+
+    PostCommentEntityResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          $ref: '#/components/schemas/PostCommentEntity'
+
+    CommentDetail:
+      type: object
+      description: 评论详情（包含互动信息）
+      properties:
+        id:
+          type: integer
+          example: 3001
+        postId:
+          type: integer
+          example: 2001
+        userId:
+          type: integer
+          example: 1001
+        username:
+          type: string
+          example: "johndoe"
+        userAvatar:
+          type: string
+          format: uri
+          example: "https://cdn.example.com/avatar/john.jpg"
+        parentCommentId:
+          type: integer
+          nullable: true
+          example: null
+        content:
+          type: string
+          example: "非常感谢分享！"
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Medium'
+        comments:
+          type: integer
+          description: 回复数量
+          example: 2
+        likes:
+          type: integer
+          description: 点赞数量
+          example: 5
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-05-01T12:30:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-05-02T09:10:00Z"
+        isLiked:
+          type: boolean
+          description: 当前用户是否已点赞
+          example: true
+
+    CommentResponseWrapper:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          $ref: '#/components/schemas/CommentDetail'
+
+    CommentPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommentDetail'
+        pageable:
+          $ref: '#/components/schemas/PageMetadata'
+        totalElements:
+          type: integer
+          example: 24
+        totalPages:
+          type: integer
+          example: 3
+        size:
+          type: integer
+          example: 10
+        number:
+          type: integer
+          example: 0
+        sort:
+          $ref: '#/components/schemas/SortInfo'
+        numberOfElements:
+          type: integer
+          example: 8
+        first:
+          type: boolean
+          example: true
+        last:
+          type: boolean
+          example: false
+        empty:
+          type: boolean
+          example: false
+
+    CommentPageResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 10000
+        message:
+          type: string
+          example: "Success"
+        data:
+          $ref: '#/components/schemas/CommentPage'
+
+tags:
+  - name: 用户认证
+    description: |
+      用户认证相关接口，包括注册、登录、密码重置等功能
+      
+      **三种登录方式：**
+      1. 用户名密码登录：POST /auth/login - 传统认证方式
+      2. 邮箱验证码登录：POST /auth/login-with-code - 发送验证码 → 验证码登录
+      3. 微信小程序登录：POST /auth/login-with-wechat - 获取微信code → 服务端验证
+      
+      **注册流程说明：**
+      - 邮箱注册：发送验证码 → 验证码确认 → 完成注册
+      - 微信注册：获取微信code → 服务端验证 → 完成注册
+  - name: 用户管理
+    description: |
+      用户信息管理相关接口，包括查看用户信息、更新资料、头像上传等
+      
+      **权限说明：**
+      - 查看信息：需要登录即可查看任何用户的公开信息
+      - 修改资料：只能修改自己的资料
+      - 上传头像：只能为自己上传头像
+  - name: 帖子管理
+    description: |
+      帖子内容管理接口，包括草稿编辑、发布、删除以及列表查询等功能。
+      
+      **功能亮点：**
+      - 支持草稿箱与发布状态切换
+      - 提供按分类、关键字搜索的分页查询
+      - 统一权限校验，确保只有作者可修改帖子
+  - name: 帖子互动
+    description: |
+      帖子点赞、收藏与批量操作相关接口，帮助实现互动数据统计。
+      
+      **包含能力：**
+      - 点赞/取消点赞、收藏/取消收藏
+      - 查看自己的点赞、收藏列表与统计
+      - 批量操作提高高频交互效率
+  - name: 帖子媒体
+    description: |
+      帖子媒体资源管理接口，用于上传、删除与访问校验。
+      
+      **注意事项：**
+      - 上传前需获取预签名URL
+      - 仅帖子作者可上传或删除媒体
+      - 支持校验媒体访问权限
+  - name: 评论管理
+    description: |
+      评论及回复的增删改查、草稿、互动统计接口。
+      
+      **功能概览：**
+      - 创建、编辑、删除评论
+      - 分页获取评论及回复
+      - 草稿保存与发布、点赞状态查询
+  - name: 评论媒体
+    description: |
+      评论媒体上传与管理接口，流程与帖子媒体一致。
+      
+      **说明：**
+      - 仅评论作者可上传/删除媒体
+      - 支持多媒体内容，遵守大小及类型限制
+
+# ==================== 错误码说明 ====================
+# 通用错误码 (1xxxx)
+# 10000: 成功
+# 10001: 参数无效
+# 10002: 未登录或token过期  
+# 10003: 权限不足
+# 10004: 请求过于频繁
+#
+# 用户模块错误码 (2xxxx)  
+# 20001: 用户不存在
+# 20002: 密码错误
+# 20003: 用户已存在
+# 20004: 不能关注自己
+#
+# 系统错误码 (9xxxx)
+# 90001: 内部服务器错误
+# 90002: 服务不可用
+# 90003: 数据库操作失败
+# 90004: 文件上传失败

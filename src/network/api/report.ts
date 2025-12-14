@@ -1,6 +1,6 @@
-import { MySort } from "../entity/MySort";
-import { PageableContent } from "../entity/pageable";
-import { ReportContent, ReportInfo, ReportResult } from "../entity/report";
+import type { MySort } from "../entity/MySort";
+import type { PageableContent } from "../entity/pageable";
+import type { ReportContent, ReportInfo, ReportResult } from "../entity/report";
 import { fetchNoError } from "../request";
 
 export async function commitReport(content: ReportContent): Promise<ReportInfo | undefined> {

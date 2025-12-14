@@ -1,6 +1,6 @@
 import { BASE_URL } from "../config";
-import { BaseResponse } from "./entity/BaseResponse";
-import { ErrorData, UniFailError, Success, HttpError } from "../utils/networkUtils";
+import type { BaseResponse } from "./entity/BaseResponse";
+import type { ErrorData, Success, HttpError } from "../utils/networkUtils";
 
 type RequestInterceptor = (config: any) => any;
 type ResponseInterceptor = (res: any) => any;
@@ -60,7 +60,7 @@ const request: Interceptors = {
 				})
 			}
         },
-        fail: (err: UniFailError) => {
+        fail: (err) => {
 			reject(err)
 		}
       })
